@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { supabase } from '../config/supabase';
 import { signupClient } from '../config/supabaseAdminSignup';
+import { formatInvoiceDate, sortByInvoiceDateDesc } from '../utils/tax';
 import { normalizePhone, isValidMobile, phoneToEmail } from '../utils/phone';
 import VendorManagementModal from '../components/VendorManagementModal';
 import VendorInvoicesModal from '../components/VendorInvoicesModal';
@@ -78,7 +79,7 @@ export default function AdminDashboardScreen() {
       );
 
       setVendorList(profiles || []);
-      setAllInvoices(invoices || []);
+      setAllInvoices(sortByInvoiceDateDesc(invoices || []));
       setMetrics({
         totalVendors: (profiles || []).length,
         totalInvoices: (invoices || []).length,
@@ -355,7 +356,7 @@ export default function AdminDashboardScreen() {
               </View>
               <Text style={styles.listSubText}>Customer: {item.customer_name}</Text>
               <Text style={styles.listSubText}>
-                Date: {item.created_at ? item.created_at.split('T')[0] : 'N/A'}
+                Date: {formatInvoiceDate(item)}
               </Text>
             </View>
           )}

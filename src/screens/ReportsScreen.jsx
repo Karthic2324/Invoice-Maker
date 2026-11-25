@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../config/supabase';
-import { formatDate } from '../utils/tax';
+import { formatDate, formatInvoiceDate, getInvoiceDate, sortByInvoiceDateDesc } from '../utils/tax';
 
 const startOfDay = (d = new Date()) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const startOfWeek = (d = new Date()) => {
@@ -13,12 +13,15 @@ const startOfWeek = (d = new Date()) => {
 };
 const startOfMonth = (d = new Date()) => new Date(d.getFullYear(), d.getMonth(), 1);
 const startOfYear = (d = new Date()) => new Date(d.getFullYear(), 0, 1);
+const startOfLastYear = (d = new Date()) => new Date(d.getFullYear() - 1, 0, 1);
 
 const PERIODS = [
   { key: 'day', label: 'Today', from: startOfDay },
   { key: 'week', label: 'This Week', from: startOfWeek },
   { key: 'month', label: 'This Month', from: startOfMonth },
   { key: 'year', label: 'This Year', from: startOfYear },
+  // Previous calendar year: 1 Jan – 31 Dec of last year
+  { key: 'lastyear', label: 'Last Year', from: startOfLastYear, to: startOfYear },
 ];
 
 const summarize = (list) => {
@@ -41,7 +44,7 @@ export default function ReportsScreen({ vendorProfile = {} }) {
   const load = async () => {
     setLoading(true);
     try {
-      const earliest = new Date(Math.min(startOfYear().getTime(), startOfWeek().getTime()));
+      const earliest = new Date(Math.min(startOfLastYear().getTime(), startOfWeek().getTime()));
       const { data, error } = await supabase
         .from('invoices')
         .select('*')
@@ -49,7 +52,7 @@ export default function ReportsScreen({ vendorProfile = {} }) {
         .gte('created_at', earliest.toISOString())
         .order('created_at', { ascending: false });
       if (error) throw error;
-      setInvoices(data || []);
+      setInvoices(sortByInvoiceDateDesc(data || []));
     } catch (err) {
       Alert.alert('Report Error', err.message);
     } finally {
@@ -63,10 +66,18 @@ export default function ReportsScreen({ vendorProfile = {} }) {
     }, [vendorProfile?.id])
   );
 
-  const inPeriod = (p) => invoices.filter((i) => new Date(i.created_at) >= p.from());
+  const inPeriod = (p) =>
+    invoices.filter((i) => {
+      const d = getInvoiceDate(i);
+      return d >= p.from() && (!p.to || d < p.to());
+    });
   const active = PERIODS.find((p) => p.key === selected);
   const activeList = inPeriod(active);
   const s = summarize(activeList);
+
+  // Growth of this year compared with last year (shown on the Last Year view)
+  const thisYearRevenue = summarize(inPeriod(PERIODS.find((p) => p.key === 'year'))).revenue;
+  const growth = s.revenue > 0 ? ((thisYearRevenue - s.revenue) / s.revenue) * 100 : null;
 
   if (loading) {
     return (
@@ -106,6 +117,13 @@ export default function ReportsScreen({ vendorProfile = {} }) {
         <Row label="Amount Received" value={inr(s.received)} />
         <Row label="Pending / Balance" value={inr(s.pending)} warn={s.pending > 0} />
         <Row label="Invoices" value={String(s.count)} />
+        {selected === 'lastyear' && (
+          <Row
+            label="This Year vs Last Year"
+            value={growth === null ? '—' : `${growth >= 0 ? '▲ +' : '▼ '}${growth.toFixed(1)}%`}
+            warn={growth !== null && growth < 0}
+          />
+        )}
       </View>
 
       <Text style={styles.listTitle}>Invoices in this period</Text>
@@ -116,7 +134,7 @@ export default function ReportsScreen({ vendorProfile = {} }) {
           <View key={i.id} style={styles.invRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.invNo}>{i.invoice_no}</Text>
-              <Text style={styles.invSub}>{i.customer_name} • {formatDate(i.created_at)}</Text>
+              <Text style={styles.invSub}>{i.customer_name} • {formatInvoiceDate(i)}</Text>
             </View>
             <Text style={styles.invAmt}>{inr(parseFloat(i.total_amount) || 0)}</Text>
           </View>

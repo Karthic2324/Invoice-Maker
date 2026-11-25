@@ -44,7 +44,7 @@ export const generateInvoiceHTML = (invoiceData, vendorProfile = {}) => {
   </head>
   <body>
     <div class="header">
-      <span class="title">QUOTATION</span>
+      <span class="title">INVOICE</span>
       <span>ORIGINAL FOR RECIPIENT</span>
     </div>
 
@@ -75,8 +75,7 @@ export const generateInvoiceHTML = (invoiceData, vendorProfile = {}) => {
         <tr>
           <th>S.NO</th>
           <th>ITEMS</th>
-          <th>HSN</th>
-          <th class="right">QTY</th>
+          <th class="right">WEIGHT (KG)</th>
           <th class="right">RATE</th>
           <th class="right">AMOUNT</th>
         </tr>
@@ -86,7 +85,6 @@ export const generateInvoiceHTML = (invoiceData, vendorProfile = {}) => {
           <tr>
             <td>${idx + 1}</td>
             <td>${esc(item.description || 'Item')}</td>
-            <td>${esc(item.hsn || '-')}</td>
             <td class="right">${esc(item.qty)}</td>
             <td class="right">${parseFloat(item.rate || 0).toFixed(2)}</td>
             <td class="right">${((parseFloat(item.qty) || 0) * (parseFloat(item.rate) || 0)).toFixed(2)}</td>
@@ -96,7 +94,7 @@ export const generateInvoiceHTML = (invoiceData, vendorProfile = {}) => {
     </table>
 
     <div style="display: flex; justify-content: space-between; margin-top: 10px; font-weight: bold;">
-      <span>TOTAL QTY: ${totalQty}</span>
+      <span>TOTAL WEIGHT: ${totalQty} kg</span>
       <span>TOTAL: ₹${total.toFixed(2)}</span>
     </div>
 

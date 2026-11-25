@@ -2,12 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Alert, ActivityIndicator,
 } from 'react-native';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+import { savePdfToDevice } from '../utils/savePdfToDevice';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../config/supabase';
 import { generateInvoiceHTML } from '../utils/generateInvoiceHTML';
-import { formatDate } from '../utils/tax';
+import { formatDate, formatInvoiceDate, sortByInvoiceDateDesc } from '../utils/tax';
 import InvoiceEditModal from '../components/InvoiceEditModal';
 
 export default function InvoiceHistoryScreen({ vendorProfile = {}, isAdmin = false }) {
@@ -25,8 +24,9 @@ export default function InvoiceHistoryScreen({ vendorProfile = {}, isAdmin = fal
       if (!isAdmin && vendorProfile?.id) q = q.eq('vendor_id', vendorProfile.id);
       const { data, error } = await q;
       if (error) throw error;
-      setInvoices(data || []);
-      applySearch(searchQuery, data || []);
+      const sorted = sortByInvoiceDateDesc(data || []);
+      setInvoices(sorted);
+      applySearch(searchQuery, sorted);
     } catch (err) {
       Alert.alert('Error', 'Failed to fetch invoice history: ' + err.message);
     } finally {
@@ -83,7 +83,7 @@ export default function InvoiceHistoryScreen({ vendorProfile = {}, isAdmin = fal
       const html = generateInvoiceHTML(
         {
           invoiceNo: inv.invoice_no,
-          invoiceDate: formatDate(inv.created_at),
+          invoiceDate: formatInvoiceDate(inv),
           customerName: inv.customer_name,
           address: inv.customer_address,
           phone: inv.customer_phone,
@@ -98,8 +98,7 @@ export default function InvoiceHistoryScreen({ vendorProfile = {}, isAdmin = fal
         profile
       );
 
-      const { uri } = await Print.printToFileAsync({ html });
-      await Sharing.shareAsync(uri);
+      await savePdfToDevice(html, `Invoice_${inv.invoice_no || inv.id}`);
     } catch (error) {
       Alert.alert('PDF Error', 'Could not generate or share PDF: ' + error.message);
     }
@@ -133,7 +132,7 @@ export default function InvoiceHistoryScreen({ vendorProfile = {}, isAdmin = fal
       </View>
       <Text style={styles.customerText}>Customer: {item.customer_name || 'Walk-in Customer'}</Text>
       <Text style={styles.dateText}>
-        Date: {formatDate(item.created_at)}
+        Date: {formatInvoiceDate(item)}
         {item.updated_at ? '  •  edited' : ''}
       </Text>
 

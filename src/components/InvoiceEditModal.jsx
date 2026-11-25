@@ -144,11 +144,7 @@ export default function InvoiceEditModal({ visible, invoice, onClose, onSaved })
                 <TextInput style={styles.input} placeholder="Description" placeholderTextColor="#64748b"
                   value={r.description} onChangeText={(v) => update(r.key, 'description', v)} />
                 <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <TextInput style={[styles.input, { flex: 1 }]} placeholder="HSN" placeholderTextColor="#64748b"
-                    value={r.hsn} onChangeText={(v) => update(r.key, 'hsn', v)} />
-                </View>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <TextInput style={[styles.input, { flex: 1 }]} placeholder="Qty" placeholderTextColor="#64748b"
+                  <TextInput style={[styles.input, { flex: 1 }]} placeholder="Weight (kg)" placeholderTextColor="#64748b"
                     keyboardType="numeric" value={r.qty} onChangeText={(v) => update(r.key, 'qty', v)} />
                   <TextInput style={[styles.input, { flex: 1 }]} placeholder="Rate" placeholderTextColor="#64748b"
                     keyboardType="numeric" value={r.rate} onChangeText={(v) => update(r.key, 'rate', v)} />

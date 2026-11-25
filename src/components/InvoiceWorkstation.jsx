@@ -17,6 +17,7 @@ import * as Print from 'expo-print';
 import { supabase } from '../config/supabase';
 import { useFocusEffect } from '@react-navigation/native';
 import { generateInvoiceHTML } from '../utils/generateInvoiceHTML';
+import { savePdfToDevice } from '../utils/savePdfToDevice';
 import { calcInvoice, formatDate } from '../utils/tax';
 import DatePickerModal from './DatePickerModal';
 
@@ -57,19 +58,19 @@ export default function InvoiceWorkstation({ vendorProfile: vendorProfileProp = 
       const { data, error } = await supabase
         .from('invoices')
         .select('invoice_no')
-        .eq('vendor_id', vendorProfile.id)
-        .order('created_at', { ascending: false })
-        .limit(1);
+        .eq('vendor_id', vendorProfile.id);
 
       let nextSeq = parseInt(vendorProfile.invoice_start_no, 10) || 1001;
       if (data && data.length > 0) {
-        // Extract the last number or increment
-        const lastNo = data[0].invoice_no;
-        const parts = lastNo.split('/');
-        const currentNum = parseInt(parts[parts.length - 1], 10);
-        if (!isNaN(currentNum)) {
-          nextSeq = Math.max(currentNum + 1, nextSeq);
-        }
+        // Highest number used so far (works for old "XX/26-27/1001" and new "XX/1001" formats,
+        // and is not affected by back-dated invoices)
+        let maxNum = 0;
+        data.forEach((row) => {
+          const parts = String(row.invoice_no || '').split('/');
+          const n = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(n) && n > maxNum) maxNum = n;
+        });
+        if (maxNum > 0) nextSeq = Math.max(maxNum + 1, nextSeq);
       }
 
       // Create a unique prefix using the vendor's business initials or ID snippet
@@ -80,16 +81,21 @@ export default function InvoiceWorkstation({ vendorProfile: vendorProfileProp = 
         .toUpperCase()
         .slice(0, 3);
 
-      setInvoiceNo(`${prefix}/26-27/${nextSeq}`);
+      setInvoiceNo(`${prefix}/${nextSeq}`);
     } catch (err) {
       console.log('Error generating unique invoice number:', err.message);
       // Fallback unique ID
-      setInvoiceNo(`INV/26-27/${Math.floor(1000 + Math.random() * 9000)}`);
+      setInvoiceNo(`INV/${Math.floor(1000 + Math.random() * 9000)}`);
     }
   };
   const [invoiceDateObj, setInvoiceDateObj] = useState(new Date());
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const invoiceDate = formatDate(invoiceDateObj);
+  // YYYY-MM-DD in LOCAL time (toISOString shifts the date back a day in India/UTC+5:30)
+  const toLocalISODate = (d) => {
+    const dt = new Date(d);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  };
   const [customerName, setCustomerName] = useState('');
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
@@ -183,6 +189,15 @@ export default function InvoiceWorkstation({ vendorProfile: vendorProfileProp = 
     ]);
   };
 
+  const handleRemoveItem = (id) => {
+    // Always keep at least one row: if it's the last one, just clear it
+    if (items.length <= 1) {
+      setItems([{ id: Date.now(), description: '', hsn: '', qty: '1', rate: '0.00' }]);
+      return;
+    }
+    setItems(items.filter((item) => item.id !== id));
+  };
+
   const handleUpdateItem = (id, field, value) => {
     setItems(
       items.map((item) => (item.id === id ? { ...item, [field]: value } : item))
@@ -218,7 +233,7 @@ const handleSaveAndPDF = async () => {
         total_tax: totalTax,
         total_amount: totalAmount,
         received_amount: 0,
-        invoice_date: invoiceDateObj.toISOString().slice(0, 10),
+        invoice_date: toLocalISODate(invoiceDateObj),
       };
 
       const { data: savedInvoice, error: invErr } = await supabase
@@ -270,7 +285,7 @@ const handleSaveAndPDF = async () => {
 
       // 4. Native OS Print / Save as PDF (NO Sharing API called!)
 // 4. Native OS Print / Save as PDF
-      await Print.printAsync({ html });
+      await savePdfToDevice(html, `Invoice_${invoiceNo}`);
 
       // 5. AUTO-REFRESH & RESET FORM FOR NEW INVOICE
       setCustomerName('');
@@ -387,10 +402,10 @@ const handleSaveAndPDF = async () => {
         <View style={styles.tableHeader}>
           <Text style={[styles.th, { width: 25 }]}>#</Text>
           <Text style={[styles.th, { flex: 2 }]}>Product Name</Text>
-          <Text style={[styles.th, { width: 45 }]}>HSN</Text>
-          <Text style={[styles.th, { width: 35 }]}>QTY</Text>
+          <Text style={[styles.th, { width: 60 }]}>WEIGHT (KG)</Text>
           <Text style={[styles.th, { flex: 1 }]}>RATE</Text>
           <Text style={[styles.th, { width: 55, textAlign: 'right' }]}>AMOUNT</Text>
+          <Text style={[styles.th, { width: 30, textAlign: 'center' }]}></Text>
         </View>
 
         {items.map((item, index) => {
@@ -411,16 +426,9 @@ const handleSaveAndPDF = async () => {
                 </TouchableOpacity>
               </View>
               <TextInput
-                style={[styles.tdInput, { width: 45 }]}
-                placeholder="HSN"
-                placeholderTextColor="#94a3b8"
-                value={item.hsn}
-                onChangeText={(val) => handleUpdateItem(item.id, 'hsn', val)}
-              />
-              <TextInput
-                style={[styles.tdInput, { width: 35 }]}
+                style={[styles.tdInput, { width: 60 }]}
                 keyboardType="numeric"
-                placeholder="Qty"
+                placeholder="Kg"
                 placeholderTextColor="#94a3b8"
                 value={item.qty}
                 onChangeText={(val) => handleUpdateItem(item.id, 'qty', val)}
@@ -434,6 +442,9 @@ const handleSaveAndPDF = async () => {
                 onChangeText={(val) => handleUpdateItem(item.id, 'rate', val)}
               />
               <Text style={styles.amountText}>{itemAmount.toFixed(2)}</Text>
+              <TouchableOpacity onPress={() => handleRemoveItem(item.id)} style={styles.deleteBtn}>
+                <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>🗑</Text>
+              </TouchableOpacity>
             </View>
           );
         })}
@@ -443,7 +454,7 @@ const handleSaveAndPDF = async () => {
         </TouchableOpacity>
 
         <View style={styles.rowBetweenSummary}>
-          <Text style={styles.summaryBoldText}>TOTAL QTY: {totalQty}</Text>
+          <Text style={styles.summaryBoldText}>TOTAL WEIGHT: {totalQty} kg</Text>
           <Text style={styles.summaryBoldText}>Total Amount : ₹{totalAmount.toFixed(2)}</Text>
         </View>
         <View style={styles.divider} />
@@ -559,6 +570,7 @@ const styles = StyleSheet.create({
   tdInput: { borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#fff', fontSize: 11, padding: 4, borderRadius: 3, marginHorizontal: 2, color: '#000' },
   searchBtn: { backgroundColor: '#0284c7', padding: 6, borderRadius: 4, justifyContent: 'center', alignItems: 'center' },
   amountText: { width: 55, textAlign: 'right', fontSize: 11, fontWeight: 'bold', color: '#000' },
+  deleteBtn: { width: 26, height: 26, marginLeft: 4, borderRadius: 4, backgroundColor: '#dc2626', alignItems: 'center', justifyContent: 'center' },
   addItemBtn: { backgroundColor: '#334155', padding: 8, borderRadius: 6, alignItems: 'center', marginTop: 8 },
   addItemBtnText: { color: '#38bdf8', fontWeight: 'bold', fontSize: 12 },
   rowBetweenSummary: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
